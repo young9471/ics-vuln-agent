@@ -1808,3 +1808,106 @@ func (d *DB) VulnDashboard() (*VulnDashboard, error) {
 	}
 	return out, nil
 }
+
+// ---------------------------------------------------------------------------
+// V2 knowledge base browse (CVE priors + ICSsploit payloads)
+// ---------------------------------------------------------------------------
+
+// VulnKnowledgeItem is one knowledge-base row for the browse UI. Refs carries
+// the ICSsploit payload detail (frames/port/options) when source=icssploit.
+type VulnKnowledgeItem struct {
+	ID         int64           `json:"id"`
+	CveID      string          `json:"cve_id"`
+	Source     string          `json:"source"`
+	Vclass     *int            `json:"vclass"`
+	Vendor     string          `json:"vendor"`
+	Product    string          `json:"product"`
+	Protocol   string          `json:"protocol"`
+	Summary    string          `json:"summary"`
+	Confidence string          `json:"confidence"`
+	Refs       json.RawMessage `json:"refs,omitempty"`
+}
+
+// VulnKnowledgeFilter drives the browse query. Empty fields are ignored.
+type VulnKnowledgeFilter struct {
+	Source   string
+	Vclass   int // 0 = any
+	Vendor   string
+	Query    string // matches cve_id / summary / product
+	Page     int
+	PageSize int
+}
+
+// VulnKnowledgeList returns a page of knowledge rows plus the total count and
+// per-source totals (for the filter chips). Payloads (icssploit) sort first.
+func (d *DB) VulnKnowledgeList(f VulnKnowledgeFilter) (items []*VulnKnowledgeItem, total int, bySource map[string]int, err error) {
+	bySource = map[string]int{}
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.PageSize < 1 || f.PageSize > 200 {
+		f.PageSize = 50
+	}
+	conds := []string{}
+	args := []any{}
+	add := func(clause string, val any) {
+		args = append(args, val)
+		conds = append(conds, fmt.Sprintf(clause, len(args)))
+	}
+	if f.Source != "" {
+		add("source = $%d", f.Source)
+	}
+	if f.Vclass > 0 {
+		add("vclass = $%d", f.Vclass)
+	}
+	if f.Vendor != "" {
+		add("lower(vendor) LIKE $%d", "%"+strings.ToLower(f.Vendor)+"%")
+	}
+	if f.Query != "" {
+		q := "%" + strings.ToLower(f.Query) + "%"
+		args = append(args, q, q, q)
+		n := len(args)
+		conds = append(conds, fmt.Sprintf("(lower(cve_id) LIKE $%d OR lower(summary) LIKE $%d OR lower(product) LIKE $%d)", n-2, n-1, n))
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+	if e := d.QueryRow("SELECT count(*) FROM vuln_knowledge"+where, args...).Scan(&total); e != nil {
+		return nil, 0, bySource, e
+	}
+	if rows, e := d.Query("SELECT source, count(*) FROM vuln_knowledge GROUP BY source"); e == nil {
+		for rows.Next() {
+			var s string
+			var n int
+			if rows.Scan(&s, &n) == nil {
+				bySource[s] = n
+			}
+		}
+		rows.Close()
+	}
+	listArgs := append(append([]any{}, args...), f.PageSize, (f.Page-1)*f.PageSize)
+	sql := fmt.Sprintf(`SELECT id, COALESCE(cve_id,''), source, vclass, COALESCE(vendor,''),
+		COALESCE(product,''), COALESCE(protocol,''), COALESCE(summary,''),
+		COALESCE(confidence,''), refs
+		FROM vuln_knowledge%s ORDER BY (source IN ('plcsts','icssploit')) DESC, id DESC LIMIT $%d OFFSET $%d`,
+		where, len(args)+1, len(args)+2)
+	rows, e := d.Query(sql, listArgs...)
+	if e != nil {
+		return nil, total, bySource, e
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var it VulnKnowledgeItem
+		var refs []byte
+		if e := rows.Scan(&it.ID, &it.CveID, &it.Source, &it.Vclass, &it.Vendor,
+			&it.Product, &it.Protocol, &it.Summary, &it.Confidence, &refs); e != nil {
+			return nil, total, bySource, e
+		}
+		if len(refs) > 0 {
+			it.Refs = json.RawMessage(refs)
+		}
+		items = append(items, &it)
+	}
+	return items, total, bySource, rows.Err()
+}

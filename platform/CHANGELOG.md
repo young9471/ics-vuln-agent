@@ -1,5 +1,25 @@
 # 更新日志
 
+## [0.14.16-v2] - 2026-11-18
+
+知识库前端浏览页 + plcsts 设备专属载荷库接入（250 个）。
+
+- 新页面 `/protocol/knowledge`（侧边栏「知识库·载荷库」）：来源/14类/厂商/
+  关键词筛选 + 分页；载荷条目（plcsts/icssploit）红色高亮、点击展开看
+  真实协议帧（帧名→hex）、端口、风险、模块路径。统计卡：知识条目 17926 /
+  利用载荷 272（设备 250 + 通用 22）。
+- 后端 `GET /api/protocol/knowledge`（db.VulnKnowledgeList）：筛选+分页+
+  按来源计数，载荷优先排序，refs JSONB 透传帧。
+- 新工具 `tools/plcsts_import.py`：解析用户自研 plcsts 框架（zip 内
+  plcsts/modules，按厂商/型号组织），AST 提取 hex 字符串赋值 /
+  binascii.a2b_hex / fromhex 帧；目录段直接定厂商/型号；attacking/cleaning/
+  spreading 入库（scanning 侦察、persistence 恶意代码不进漏洞库）。
+  250 载荷覆盖 15 厂商（schneider 70/rockwell 38/siemens 30 + 和利时/海为/
+  四方/南大傲拓/DCCE 等国产），**NA300 现有 DoS/重启/写内存/RCE/默认凭据
+  载荷**（原零公开 CVE 的纯灰盒目标）。
+- query_kb 与 knowledge 列表排序统一为载荷优先（plcsts+icssploit）。
+- 新增 14 项 plcsts 单测；icssploit 8 项回归过；db/server 测试过。
+
 ## [0.14.15-v2] - 2026-11-18
 
 ICSsploit 载荷知识库接入：用户的 PLC 利用框架成为 P7/P9 的高价值先验。

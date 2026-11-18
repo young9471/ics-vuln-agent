@@ -421,6 +421,17 @@ export const protocolApi = {
   vulnDashboard() {
     return http<VulnDashboard>(`/protocol/dashboard`);
   },
+  knowledge(params?: { source?: string; vclass?: number; vendor?: string; q?: string; page?: number; page_size?: number }) {
+    const p = new URLSearchParams();
+    if (params?.source) p.set("source", params.source);
+    if (params?.vclass) p.set("vclass", String(params.vclass));
+    if (params?.vendor) p.set("vendor", params.vendor);
+    if (params?.q) p.set("q", params.q);
+    if (params?.page) p.set("page", String(params.page));
+    if (params?.page_size) p.set("page_size", String(params.page_size));
+    const qs = p.toString();
+    return http<KnowledgePage>(`/protocol/knowledge${qs ? `?${qs}` : ""}`);
+  },
   listFindings(params?: { q?: string; grade?: string; layer?: string; limit?: number }) {
     const p = new URLSearchParams();
     if (params?.q) p.set("q", params.q);
@@ -612,6 +623,41 @@ export interface VulnDashboard {
   knowledge: { rows: number; cves: number; vclass_covered: number };
   events: DashboardEvent[] | null;
   case_rows: DashboardCaseRow[] | null;
+}
+
+export interface KnowledgeRefs {
+  module?: string;
+  kind?: string;
+  category?: string;
+  vendor?: string;
+  model?: string;
+  risk?: string;
+  port?: number | null;
+  frames?: Record<string, string>;
+  options?: Record<string, unknown>;
+  references?: string[];
+  authors?: string[];
+}
+
+export interface KnowledgeItem {
+  id: number;
+  cve_id: string;
+  source: string;
+  vclass: number | null;
+  vendor: string;
+  product: string;
+  protocol: string;
+  summary: string;
+  confidence: string;
+  refs?: KnowledgeRefs | null;
+}
+
+export interface KnowledgePage {
+  items: KnowledgeItem[] | null;
+  total: number;
+  by_source: Record<string, number>;
+  page: number;
+  page_size: number;
 }
 
 export interface ProtocolApproval {

@@ -2,6 +2,7 @@ import {
   Bot,
   Brain,
   Bug,
+  Database,
   FolderOpen,
   type LucideIcon,
   LayoutDashboard,
@@ -69,6 +70,7 @@ export const sidebarItems: NavGroup[] = [
     label: "协议逆向",
     items: [
       { id: "protocol-cases", title: "逆向案例", url: "/protocol/cases", icon: Target },
+      { id: "protocol-knowledge", title: "知识库·载荷库", url: "/protocol/knowledge", icon: Database },
       { id: "protocol-findings", title: "协议发现", url: "/protocol/findings", icon: Bug },
       { id: "protocol-tools", title: "工具链", url: "/protocol/tools", icon: Terminal },
       { id: "chat", title: "对话", url: "/chat", icon: MessageSquare },

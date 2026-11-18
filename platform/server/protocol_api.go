@@ -1358,6 +1358,35 @@ func (s *Server) protocolVulnDashboard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, d)
 }
 
+// protocolKnowledge browses the vulnerability knowledge base (CVE priors from
+// plc-intel/icsvuln plus ICSsploit payloads). Filters: source/vclass/vendor/q.
+func (s *Server) protocolKnowledge(w http.ResponseWriter, r *http.Request) {
+	pg := s.pg(w)
+	if pg == nil {
+		return
+	}
+	q := r.URL.Query()
+	vclass, _ := strconv.Atoi(q.Get("vclass"))
+	page, _ := strconv.Atoi(q.Get("page"))
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+	items, total, bySource, err := pg.VulnKnowledgeList(db.VulnKnowledgeFilter{
+		Source:   strings.TrimSpace(q.Get("source")),
+		Vclass:   vclass,
+		Vendor:   strings.TrimSpace(q.Get("vendor")),
+		Query:    strings.TrimSpace(q.Get("q")),
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"items": items, "total": total, "by_source": bySource,
+		"page": page, "page_size": pageSize,
+	})
+}
+
 func (s *Server) protocolToolConfig(w http.ResponseWriter, r *http.Request) {
 	// The paths are read-only here; change them in config.json / env and restart.
 	// The check endpoint proves the interpreter and tool files are reachable.

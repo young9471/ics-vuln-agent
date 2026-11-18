@@ -163,12 +163,12 @@ def query_kb(vendor, product, protocol, vclass, max_n, psql_path=DEFAULT_PSQL,
     if vclass:
         conds.append(f"vclass = {int(vclass)}")
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
-    # 载荷库（icssploit：带真实帧的已验证利用原语）优先于 CVE 先验返回，
-    # 否则按 cve_id 排序时 ICSSPLOIT: 前缀永远排在 CVE- 之后被 LIMIT 截掉。
+    # 载荷库（plcsts 设备专属 / icssploit 通用：带真实帧的已验证利用原语）
+    # 优先于 CVE 先验返回，否则按 cve_id 排序时载荷前缀永远被 CVE- 挤出 LIMIT。
     sql = ("SELECT coalesce(json_agg(t), '[]'::json) FROM ("
            "SELECT cve_id, source, vclass, vendor, product, protocol, "
            "left(summary, 200) AS summary, confidence FROM vuln_knowledge"
-           + where + " ORDER BY (source='icssploit') DESC, cve_id LIMIT " + str(int(max_n)) + ") t")
+           + where + " ORDER BY (source IN ('plcsts','icssploit')) DESC, cve_id LIMIT " + str(int(max_n)) + ") t")
     pgp = pg.split(":")
     host, port, dbn, user = (pgp + ["127.0.0.1", "5433", "protocol_platform", "pagent"])[:4]
     p = subprocess.run([psql_path, "-h", host, "-p", port, "-U", user, "-d", dbn,
