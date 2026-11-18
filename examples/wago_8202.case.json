@@ -1,0 +1,51 @@
+{
+  "schema": "protocol-agent/case/v1",
+  "case": "WAGO 750-8202 + CODESYS V2.3 (golden regression baseline)",
+  "input": {
+    "install_root": "E:\\Codesys V2.3\\CODESYS V2.3",
+    "device_ip": "192.168.1.20",
+    "authorization": "full (test device, no production program)",
+    "golden_artifacts": {
+      "pcap_codesys": "E:\\Codesys V2.3\\protocol_analysis\\pcaps\\session1_codesys.pcapng",
+      "pcap_wago_gt": "E:\\Codesys V2.3\\protocol_analysis\\pcaps\\wago_groundtruth.pcapng",
+      "comm_dll": "E:\\Codesys V2.3\\CODESYS V2.3\\Targets\\WAGO\\PLCconf\\PFC200\\RS\\WBCComm.dll",
+      "gateway_exe": "C:\\Windows\\SysWOW64\\Gateway.exe"
+    }
+  },
+  "expected_findings": {
+    "ports": { "open": [2455, 6626, 502], "closed": [1200] },
+    "frame_formats": [
+      {
+        "protocol": "CODESYS V2 gateway (TCP 2455)",
+        "magic": "cccc", "alt_magic": "6666", "header_size": 24,
+        "len_offset": 4, "len_size": 4, "endian": "le", "len_bias": 0,
+        "notes": "service byte at +0x15 (d4=0x00SS0023); svc 0x02 tunnels inner runtime protocol"
+      },
+      {
+        "protocol": "WAGO service (TCP 6626)",
+        "magic": null, "header_size": 18, "len_offset": 16, "len_size": 2,
+        "endian": "le", "len_bias": 0,
+        "notes": "first u16 is constant proto-id 0x1288 (NOT the function code - pitfall #2); handshake payload 0101feaf"
+      }
+    ],
+    "function_codes": {
+      "wago_static_count": 40,
+      "wago_live_verified": ["0x0106", "0x0108", "0x010c", "0x010f", "0x0111",
+                             "0x0113", "0x0221", "0x0225", "0x0401", "0x0503",
+                             "0x0601", "0x0602"],
+      "wago_unimplemented_status": "0x8212"
+    }
+  },
+  "regression_commands": [
+    "python tools/frame_hypothesis.py --pcap <golden pcap> --out reg.json",
+    "python tools/extract_codes.py --dll <WBCComm.dll> --anchor exports --symbol-filter CServiceAPI --out reg.json",
+    "python tools/client_harness.py --spec wago --host 192.168.1.20 identify",
+    "python tools/recon_pe.py --root <install_root> --out reg.json"
+  ],
+  "pass_criteria": [
+    "frame_hypothesis confirms cccc/24B header with alt 6666 on stream>=1",
+    "extract_codes reproduces >= 40 distinct CServiceAPI codes incl. 0x0108 IdentifyDevice",
+    "client_harness identify returns status 0x0000 and ORDER=750-8202 string",
+    "recon_pe ranks WBCComm.dll and Gateway-relevant exes above min-score"
+  ]
+}

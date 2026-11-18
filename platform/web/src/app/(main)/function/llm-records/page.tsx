@@ -1,0 +1,520 @@
+"use client";
+
+import * as React from "react";
+import { toast } from "sonner";
+import {
+  RadioIcon,
+  SearchIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  Loader2Icon,
+  XIcon,
+  Trash2Icon,
+  CopyIcon,
+  CheckIcon,
+  DownloadIcon,
+} from "lucide-react";
+
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
+import type { LLMRecordItem, LLMRecordDetail } from "@/lib/types";
+
+function fmtTime(ts: string) {
+  return new Date(ts).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function fmtLatency(ms: number) {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function fmtTokens(n: number) {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+function tryFormatJSON(s: string): string {
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return s;
+  }
+}
+
+// 复制当前框内文本的小按钮。复制成功后短暂显示对勾。text 为空/仅占位符时禁用。
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = React.useState(false);
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const disabled = !text;
+  const copy = async () => {
+    if (disabled) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // navigator.clipboard 在非安全上下文(如 http 局域网)不可用，回退到 execCommand。
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* 忽略：不支持则静默 */ }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="size-5 shrink-0"
+      disabled={disabled}
+      title={copied ? "已复制" : "复制内容"}
+      onClick={copy}
+    >
+      {copied ? <CheckIcon className="size-3 text-emerald-600" /> : <CopyIcon className="size-3" />}
+    </Button>
+  );
+}
+
+const PAGE_SIZES = [25, 50, 100];
+
+function LLMRecordsInner() {
+  const [page, setPage] = React.useState(0);
+  const [size, setSize] = React.useState(50);
+  const [session, setSession] = React.useState("");
+  const [sessionQ, setSessionQ] = React.useState("");
+  const [model, setModel] = React.useState("");
+
+  const [records, setRecords] = React.useState<LLMRecordItem[]>([]);
+  const [total, setTotal] = React.useState(0);
+  const [loading, setLoading] = React.useState(false);
+
+  // Recording on/off toggle (settings.llm_record; default off). When off the
+  // backend records nothing.
+  const [recEnabled, setRecEnabled] = React.useState(false);
+  const [recBusy, setRecBusy] = React.useState(false);
+
+  // Inline detail panel (Burp-style split, not a dialog)
+  const [selected, setSelected] = React.useState<LLMRecordItem | null>(null);
+  const [detail, setDetail] = React.useState<LLMRecordDetail | null>(null);
+  const [detailLoading, setDetailLoading] = React.useState(false);
+  // 归一化视图 / HTTP 原文视图。原文是排查 provider 侧问题的唯一依据：归一化视图
+  // 不含工具 schema，响应里也没有 tool_use 块。
+  const [rawView, setRawView] = React.useState(false);
+
+  const hasRaw = !!(detail?.raw_request || detail?.raw_response);
+  // 开关保持用户选择，但切到一条无原文的旧记录时自动落回解析视图，而不是显示空白。
+  const showRaw = rawView && hasRaw;
+  // 原文请求体是 JSON，pretty-print 只改排版不改语义，便于阅读；原文响应是 SSE
+  // 帧，tryFormatJSON 解析失败会原样返回，故两边共用一个函数即可。
+  const reqText = showRaw
+    ? detail?.raw_request && tryFormatJSON(detail.raw_request)
+    : detail?.request_body && tryFormatJSON(detail.request_body);
+  const respText = showRaw
+    ? detail?.raw_response
+    : detail?.response_body && tryFormatJSON(detail.response_body);
+
+  // Load recording toggle state on mount.
+  React.useEffect(() => {
+    let alive = true;
+    api
+      .settings()
+      .then((s) => { if (alive) setRecEnabled(!!s.llm_record); })
+      .catch((error) => { if (alive) toast.error(`读取录制设置失败：${(error as Error).message}`); });
+    return () => { alive = false; };
+  }, []);
+
+  const toggleRecording = async (on: boolean) => {
+    setRecBusy(true);
+    setRecEnabled(on); // optimistic
+    try {
+      const s = await api.setSettings({ llm_record: on });
+      setRecEnabled(!!s.llm_record);
+    } catch (error) {
+      setRecEnabled(!on); // revert on failure
+      toast.error(`录制设置更新失败：${(error as Error).message}`);
+    } finally {
+      setRecBusy(false);
+    }
+  };
+
+  // Debounce session filter.
+  React.useEffect(() => {
+    const t = setTimeout(() => setSessionQ(session.trim()), 300);
+    return () => clearTimeout(t);
+  }, [session]);
+
+  // Reset page on filter change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each filter change resets pagination.
+  React.useEffect(() => {
+    setPage(0);
+  }, [sessionQ, model, size]);
+
+  // Load list.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadTick explicitly refreshes after deletion.
+  React.useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api
+      .llmRecords({ model: model || undefined, session: sessionQ || undefined, page, size })
+      .then((r) => {
+        if (!alive) return;
+        setRecords(r.records ?? []);
+        setTotal(r.total ?? 0);
+      })
+      .catch((error) => { if (alive) toast.error(`读取录制记录失败：${(error as Error).message}`); })
+      .finally(() => alive && setLoading(false));
+    return () => { alive = false; };
+  }, [page, size, sessionQ, model]);
+
+  // Lazy-load full request/response when a row is selected.
+  React.useEffect(() => {
+    if (!selected) {
+      setDetail(null);
+      return;
+    }
+    let alive = true;
+    setDetailLoading(true);
+    setDetail(null);
+    api
+      .llmRecordDetail(selected.id)
+      .then((d) => { if (alive) setDetail(d); })
+      .catch((error) => { if (alive) toast.error(`读取记录详情失败：${(error as Error).message}`); })
+      .finally(() => { if (alive) setDetailLoading(false); });
+    return () => { alive = false; };
+  }, [selected]);
+
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  const rangeStart = total === 0 ? 0 : page * size + 1;
+  const rangeEnd = page * size + records.length;
+
+  const downloadRecord = () => {
+    if (!detail) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(detail, null, 2)], { type: "application/json;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `protocol-agent-llm-record-${detail.id}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <RadioIcon className="h-5 w-5 text-muted-foreground" />
+          <h1 className="text-xl font-semibold tracking-tight">LLM 录制</h1>
+          <Badge variant="secondary">{total}</Badge>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative max-w-sm flex-1">
+          <SearchIcon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="搜索 Session ID..."
+            value={session}
+            onChange={(e) => setSession(e.target.value)}
+            className="h-8 pl-8"
+          />
+        </div>
+        <Input
+          placeholder="Model"
+          className="h-8 w-48"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+        />
+        <Select value={String(size)} onValueChange={(v) => setSize(Number(v))}>
+          <SelectTrigger size="sm" className="w-28">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZES.map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n} / 页
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Recording on/off — off means no LLM calls are recorded */}
+        <div className="flex items-center gap-2 rounded-md border px-2.5 py-1">
+          <Switch
+            id="llm-rec-toggle"
+            size="sm"
+            checked={recEnabled}
+            onCheckedChange={toggleRecording}
+            disabled={recBusy}
+          />
+          <label
+            htmlFor="llm-rec-toggle"
+            className={cn(
+              "cursor-pointer text-xs font-medium select-none",
+              recEnabled ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {recEnabled ? "录制中" : "已关闭"}
+          </label>
+        </div>
+
+        <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="tabular-nums">
+            {rangeStart}–{rangeEnd} / {total}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            disabled={page <= 0}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+          >
+            <ChevronLeftIcon />
+          </Button>
+          <span className="tabular-nums">
+            {page + 1} / {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            disabled={page + 1 >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+          >
+            <ChevronRightIcon />
+          </Button>
+        </div>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        录制开关作用于全部任务，开启后仅记录后续调用，无法补录之前的回合。选择一条记录可检查请求、响应、实际模型及错误，并下载完整 JSON；原文视图用于核对服务商实际收发内容。
+      </p>
+
+      {/* History table + inline detail (Burp-style split) */}
+      <div className="flex h-[calc(100vh-13rem)] min-h-0 flex-col gap-3">
+        <Card className="flex min-h-0 flex-1 flex-col overflow-hidden py-0">
+          <div className="min-h-0 flex-1 overflow-auto">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableRow>
+                  <TableHead className="w-[130px]">时间</TableHead>
+                  <TableHead className="w-[100px]">Agent</TableHead>
+                  <TableHead className="w-[130px]">Session</TableHead>
+                  <TableHead className="w-[100px]">Profile</TableHead>
+                  <TableHead className="w-[140px]">Model</TableHead>
+                  <TableHead className="w-[70px]">延迟</TableHead>
+                  <TableHead className="w-[90px]">Tokens</TableHead>
+                  <TableHead className="w-[60px]">状态</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading && records.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-12 text-center">
+                      <Loader2Icon className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
+                    </TableCell>
+                  </TableRow>
+                ) : records.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-12 text-center text-sm text-muted-foreground">
+                      暂无 LLM 调用记录
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  records.map((rec) => (
+                    <TableRow
+                      key={rec.id}
+                      className={cn(
+                        "cursor-pointer",
+                        selected?.id === rec.id && "bg-accent hover:bg-accent",
+                      )}
+                      onClick={() => setSelected(rec)}
+                    >
+                      <TableCell className="text-xs text-muted-foreground tabular-nums">
+                        {fmtTime(rec.ts)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs font-mono">
+                          {rec.worker || "-"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[130px] truncate font-mono text-xs text-muted-foreground" title={rec.session_id}>
+                        {rec.session_id || "-"}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs">{rec.profile_name || "-"}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs font-mono">{rec.model || "-"}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span className={cn("text-xs", rec.latency_ms > 30000 && "text-amber-500")}>
+                          {fmtLatency(rec.latency_ms)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs">
+                          {fmtTokens(rec.input_tokens)} / {fmtTokens(rec.output_tokens)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {rec.status === "ok" ? (
+                          <Badge variant="secondary" className="text-xs text-emerald-600">OK</Badge>
+                        ) : (
+                          <Badge variant="destructive" className="text-xs">Error</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+
+        {/* Inline detail panel */}
+        {selected && (
+          <Card className="flex h-[42%] min-h-0 flex-col overflow-hidden py-0">
+            {/* Detail header */}
+            <div className="flex items-center gap-2 border-b px-3 py-2">
+              <Badge variant="outline" className="text-xs font-mono">
+                #{selected.id}
+              </Badge>
+              <Badge variant="outline" className="text-xs font-mono">
+                {selected.profile_name || "-"}
+              </Badge>
+              <Badge variant="outline" className="text-xs font-mono">
+                {selected.model || "-"}
+              </Badge>
+              <Badge variant="outline" className="text-xs font-mono">
+                {selected.worker || "agent"}
+              </Badge>
+              <Badge variant="outline" className="max-w-[220px] truncate text-xs font-mono" title={selected.session_id}>
+                {selected.session_id || "session"}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {fmtTime(selected.ts)}
+              </span>
+              <span className={cn("text-xs", selected.latency_ms > 30000 && "text-amber-500")}>
+                {fmtLatency(selected.latency_ms)}
+              </span>
+              {selected.status === "ok" ? (
+                <Badge variant="secondary" className="text-xs text-emerald-600">OK</Badge>
+              ) : (
+                <Badge variant="destructive" className="text-xs">Error</Badge>
+              )}
+              {/* 原文视图开关。旧记录没有原文，此时禁用而非静默回退，避免看着像
+                  「原文与解析一致」。 */}
+              <Button variant="ghost" size="sm" className="ml-auto h-7 shrink-0 text-xs" disabled={!detail || detailLoading} onClick={downloadRecord}>
+                <DownloadIcon className="size-3.5" />
+                下载 JSON
+              </Button>
+              <Button
+                variant={showRaw ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 shrink-0 text-xs"
+                disabled={!hasRaw}
+                title={hasRaw ? "查看与 provider 实际收发的 HTTP 原文" : "该记录录制于此功能上线前，无原文"}
+                onClick={() => setRawView((v) => !v)}
+              >
+                原文
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0"
+                onClick={() => setSelected(null)}
+              >
+                <XIcon />
+              </Button>
+            </div>
+            {/* Request / Response split */}
+            <div className="grid min-h-0 flex-1 grid-cols-2 divide-x">
+              <div className="flex min-h-0 min-w-0 flex-col">
+                <div className="flex items-center gap-2 border-b py-0.5 pr-1.5 pl-3 text-[11px] font-medium text-muted-foreground">
+                  <span>Request{showRaw && " · 原文"}</span>
+                  <CopyButton text={reqText || ""} />
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto">
+                  {detailLoading ? (
+                    <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
+                      <Loader2Icon className="size-3.5 animate-spin" />
+                      加载…
+                    </div>
+                  ) : (
+                    <pre className="p-3 font-mono text-xs break-all whitespace-pre-wrap">
+                      {reqText || "（空）"}
+                    </pre>
+                  )}
+                </div>
+              </div>
+              <div className="flex min-h-0 min-w-0 flex-col">
+                <div className="flex items-center gap-2 border-b py-0.5 pr-1.5 pl-3 text-[11px] font-medium text-muted-foreground">
+                  <span>Response{showRaw && " · 原文（SSE）"}</span>
+                  <CopyButton text={respText || ""} />
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto">
+                  {detailLoading ? (
+                    <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
+                      <Loader2Icon className="size-3.5 animate-spin" />
+                      加载…
+                    </div>
+                  ) : (
+                    <pre className={cn(
+                      "p-3 font-mono text-xs break-all whitespace-pre-wrap",
+                      selected.status !== "ok" && "text-red-600 dark:text-red-400",
+                    )}>
+                      {respText || "（空）"}
+                    </pre>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+export default function LLMRecordsPage() {
+  return (
+    <React.Suspense fallback={<Loader2Icon className="m-auto size-5 animate-spin text-muted-foreground" />}>
+      <LLMRecordsInner />
+    </React.Suspense>
+  );
+}

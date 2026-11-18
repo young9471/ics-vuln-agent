@@ -1,0 +1,17 @@
+[Unit]
+Description=Protocol Agent
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__WORKDIR__
+ExecStart=__BIN__ -addr __ADDR__
+Restart=on-failure
+RestartSec=5
+# The service intentionally runs as a dedicated unprivileged account.
+User=__USER__
+Group=__USER__
+
+[Install]
+WantedBy=multi-user.target

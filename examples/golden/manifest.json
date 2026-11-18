@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "description": "Golden protocol cases. Raw pcaps/findings stay local (data/ or a configured directory); only expectations are versioned.",
+  "cases": [
+    {
+      "case_id": 2,
+      "name": "WAGO 750-8202 + CODESYS V2.3",
+      "expected": {"min_assets": 2, "min_frames": 1, "min_codes": 48, "required_docs": 4}
+    },
+    {
+      "case_id": 5,
+      "name": "EcoStruxure Machine Expert - Basic + M221",
+      "expected": {"min_assets": 1, "min_frames": 1, "min_codes": 30, "required_docs": 4}
+    },
+    {
+      "case_id": 9,
+      "name": "Control Expert 15.3 + M580 (UMAS)",
+      "expected": {"min_assets": 1, "min_frames": 1, "min_codes": 54, "required_docs": 4}
+    },
+    {
+      "case_id": 10,
+      "name": "NAPro + NA300",
+      "expected": {"min_assets": 1, "min_frames": 1, "min_codes": 37, "required_docs": 4}
+    }
+  ]
+}
