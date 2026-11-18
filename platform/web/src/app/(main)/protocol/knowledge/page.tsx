@@ -96,6 +96,7 @@ export default function KnowledgePage() {
   }, [load]);
 
   const payloadTotal = (bySource.plcsts ?? 0) + (bySource.icssploit ?? 0);
+  const vendorCount = new Set(items.map((i) => i.vendor).filter(Boolean)).size;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
@@ -103,10 +104,10 @@ export default function KnowledgePage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-semibold">
-            <DatabaseIcon className="size-5" /> 漏洞知识库与载荷库
+            <DatabaseIcon className="size-5" /> 验证 EXP 载荷库
           </h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            CVE 先验（icsvuln / plc-intel）+ 已验证利用载荷（plcsts 设备专属 / icssploit 通用，含真实协议帧）。
+            已验证的 PLC 利用载荷（plcsts 设备专属 / icssploit 通用），含真实协议帧。
             P7 测绘优先匹配载荷，P9 可引用载荷帧生成 EXP。
           </p>
         </div>
@@ -117,22 +118,24 @@ export default function KnowledgePage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-4">
-        <Card><CardContent className="pt-4">
-          <div className="text-xs text-muted-foreground">知识条目</div>
-          <div className="text-2xl font-semibold tabular-nums">{total}</div>
-        </CardContent></Card>
         <Card className="border-red-200"><CardContent className="pt-4">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground"><SwordsIcon className="size-3.5" /> 利用载荷</div>
-          <div className="text-2xl font-semibold tabular-nums text-red-600">{payloadTotal}</div>
-          <div className="text-[11px] text-muted-foreground">设备 {bySource.plcsts ?? 0} · 通用 {bySource.icssploit ?? 0}</div>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground"><SwordsIcon className="size-3.5" /> 验证 EXP</div>
+          <div className="text-2xl font-semibold tabular-nums text-red-600">{total}</div>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <div className="text-xs text-muted-foreground">icsvuln</div>
-          <div className="text-2xl font-semibold tabular-nums">{bySource.icsvuln ?? 0}</div>
+          <div className="text-xs text-muted-foreground">设备专属载荷</div>
+          <div className="text-2xl font-semibold tabular-nums">{bySource.plcsts ?? 0}</div>
+          <div className="text-[11px] text-muted-foreground">plcsts · 按厂商/型号</div>
         </CardContent></Card>
         <Card><CardContent className="pt-4">
-          <div className="text-xs text-muted-foreground">plc-intel</div>
-          <div className="text-2xl font-semibold tabular-nums">{bySource["plc-intel"] ?? 0}</div>
+          <div className="text-xs text-muted-foreground">通用载荷</div>
+          <div className="text-2xl font-semibold tabular-nums">{bySource.icssploit ?? 0}</div>
+          <div className="text-[11px] text-muted-foreground">icssploit</div>
+        </CardContent></Card>
+        <Card><CardContent className="pt-4">
+          <div className="text-xs text-muted-foreground">覆盖厂商</div>
+          <div className="text-2xl font-semibold tabular-nums">{vendorCount}</div>
+          <div className="text-[11px] text-muted-foreground">含五基准设备 + 国产</div>
         </CardContent></Card>
       </div>
 
@@ -145,8 +148,6 @@ export default function KnowledgePage() {
                 <SelectItem value="all">全部来源</SelectItem>
                 <SelectItem value="plcsts">设备载荷 (plcsts)</SelectItem>
                 <SelectItem value="icssploit">通用载荷 (icssploit)</SelectItem>
-                <SelectItem value="icsvuln">icsvuln</SelectItem>
-                <SelectItem value="plc-intel">plc-intel</SelectItem>
               </SelectContent>
             </Select>
             <Select value={vclass} onValueChange={(v) => { setVclass(v); setPage(1); }}>
