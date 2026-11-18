@@ -1,5 +1,21 @@
 # 更新日志
 
+## [0.14.15-v2] - 2026-11-18
+
+ICSsploit 载荷知识库接入：用户的 PLC 利用框架成为 P7/P9 的高价值先验。
+
+- 新工具 `tools/icssploit_import.py`：AST 静态解析框架模块（不执行代码），
+  提取 __info__（设备/描述/参考）、Option 默认端口、bytearray.fromhex
+  硬编码协议帧；按语义映射 14 类（启停→3 destructive、crash/dos→7、
+  qconn 远程执行→8、profinet set_ip→12、默认凭据/暴破→2 read）。
+  scanners 是侦察工具不入库。22 个载荷模块入库（source=icssploit，
+  cve_id 用稳定伪 id ICSSPLOIT:<路径>，真实帧/端口/选项存 refs JSONB，
+  confidence=high）。
+- `vuln_intel.py query_kb` 排序改为载荷优先（source=icssploit DESC）——
+  否则 ICSSPLOIT: 前缀按 cve_id 排序永远被 CVE- 挤出 LIMIT。验证：
+  --vendor siemens --protocol s7comm 现在前两条即 S7-1200/300/400 启停载荷。
+- 新增 8 项单测（分类/AST 解析/SQL 转义）；vuln_kb_import 回归 10 项过。
+
 ## [0.14.14-v2] - 2026-11-18
 
 品牌重塑：Protocol Agent → **ICS VulnAgent（工控系统脆弱性分析与利用智能体）**。
