@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 import { Markdown } from "@/components/markdown";
+import { SessionStateGraph } from "@/components/session-state-graph";
 import { ProtocolVulnView } from "@/components/protocol-vuln-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -191,6 +192,7 @@ function SessionModelPanels({ notes }: { notes: ProtocolNote[] }) {
             </CardHeader>
             <CardContent className="grid gap-3">
               {summary ? <p className="text-xs text-muted-foreground">{summary}</p> : null}
+              <SessionStateGraph payload={p} />
               {states.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {states.map((s) => (

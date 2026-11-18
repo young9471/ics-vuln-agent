@@ -1,5 +1,20 @@
 # 更新日志
 
+## [0.14.18-v2] - 2026-11-18
+
+协议会话状态机可视化：从徽章+表格升级为 SVG 状态转移图。
+
+- 新组件 `session-state-graph.tsx`：把 session-model 的 states +
+  transitions/verified_transitions（数组 [from,to,label,verdict] 或对象）
+  渲染为左→右分层布局有向图。端点命名不规范时按 hex 码/前缀归一匹配到
+  canonical 状态；无法匹配的端点成独立节点。最长路径分层，自环（轮询）
+  画节点上方弧，回边上方绕行。已验证迁移=绿实线、未验证/观测=灰虚线，
+  起始节点绿、closed 节点红；图例 + 节点/迁移计数。
+- transitions 稀疏时从 observed_sequence_p2/p5 的 → 链兜底构造链式边。
+- 接入 SessionModelPanels：图在上，原状态徽章/迁移明细表/最小序列保留在下。
+- 案例 28 真实数据验证：12 节点 7 迁移（idle→connected→reserved→keyed→
+  polling→downloading→closed），UMAS 全会话模型图形化。
+
 ## [0.14.17-v2] - 2026-11-18
 
 知识库精简为「验证 EXP 载荷库」：只保留已验证利用载荷。
