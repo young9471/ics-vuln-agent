@@ -432,6 +432,11 @@ export const protocolApi = {
     const qs = p.toString();
     return http<KnowledgePage>(`/protocol/knowledge${qs ? `?${qs}` : ""}`);
   },
+  knowledgeScript(id: number) {
+    return http<{ name: string; path: string; size: number; sha256_16: string; content: string }>(
+      `/protocol/knowledge/script?id=${id}`,
+    );
+  },
   listFindings(params?: { q?: string; grade?: string; layer?: string; limit?: number }) {
     const p = new URLSearchParams();
     if (params?.q) p.set("q", params.q);
@@ -637,6 +642,8 @@ export interface KnowledgeRefs {
   options?: Record<string, unknown>;
   references?: string[];
   authors?: string[];
+  standalone?: string;
+  standalone_sha16?: string;
 }
 
 export interface KnowledgeItem {

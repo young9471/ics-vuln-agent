@@ -5,7 +5,9 @@ import * as React from "react";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  CopyIcon,
   DatabaseIcon,
+  FileCode2Icon,
   Loader2Icon,
   RefreshCwIcon,
   SearchIcon,
@@ -16,7 +18,15 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -68,7 +78,25 @@ export default function KnowledgePage() {
   const [q, setQ] = React.useState("");
   const [page, setPage] = React.useState(1);
   const [expanded, setExpanded] = React.useState<number | null>(null);
+  const [scriptOpen, setScriptOpen] = React.useState(false);
+  const [scriptLoading, setScriptLoading] = React.useState(false);
+  const [scriptData, setScriptData] = React.useState<{ name: string; size: number; sha?: string; content: string } | null>(null);
   const pageSize = 50;
+
+  const openScript = async (it: KnowledgeItem) => {
+    setScriptData(null);
+    setScriptOpen(true);
+    setScriptLoading(true);
+    try {
+      const r = await protocolApi.knowledgeScript(it.id);
+      setScriptData({ name: r.name, size: r.size, sha: r.sha256_16, content: r.content });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "脚本读取失败");
+      setScriptOpen(false);
+    } finally {
+      setScriptLoading(false);
+    }
+  };
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -221,12 +249,17 @@ export default function KnowledgePage() {
                           <div className="space-y-2 text-xs">
                             <p className="text-muted-foreground">{it.summary}</p>
                             {payload ? (
-                              <div className="flex flex-wrap gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 {it.refs?.risk ? (
                                   <span className={`rounded px-1.5 py-0.5 text-[11px] ${RISK_CLS[it.refs.risk] ?? "bg-muted"}`}>风险: {it.refs.risk}</span>
                                 ) : null}
                                 {it.refs?.port ? <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">端口: {it.refs.port}</span> : null}
                                 {it.refs?.category ? <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">类别: {it.refs.category}</span> : null}
+                                {it.refs?.standalone ? (
+                                  <Button size="sm" className="h-7 px-2 text-[11px]" onClick={(e) => { e.stopPropagation(); void openScript(it); }}>
+                                    <FileCode2Icon className="mr-1 size-3" /> 查看独立脚本（脱框架）
+                                  </Button>
+                                ) : null}
                                 {it.refs?.module ? <span className="font-mono text-[11px] text-muted-foreground">{it.refs.module}</span> : null}
                               </div>
                             ) : null}
@@ -266,6 +299,38 @@ export default function KnowledgePage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={scriptOpen} onOpenChange={setScriptOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-mono text-sm">
+              {scriptData?.name ?? "独立 EXP 脚本"}
+              {scriptData?.sha ? <span className="text-[11px] font-normal text-muted-foreground">sha16: {scriptData.sha}</span> : null}
+            </DialogTitle>
+            <DialogDescription>
+              零依赖独立脚本（{scriptData ? `${scriptData.size} 字节` : "加载中"}）· 已脱离原框架 · --target 指定实验室设备 · --dry-run 安全模式
+            </DialogDescription>
+          </DialogHeader>
+          {scriptLoading ? (
+            <div className="flex justify-center py-8"><Loader2Icon className="size-5 animate-spin" /></div>
+          ) : scriptData ? (
+            <>
+              <div className="flex justify-end">
+                <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(scriptData.content).then(
+                      () => toast.success("脚本已复制"), () => toast.error("复制失败"));
+                  }}>
+                  <CopyIcon className="mr-1 size-3" /> 复制
+                </Button>
+              </div>
+              <ScrollArea className="h-[440px] rounded border bg-muted/40">
+                <pre className="p-3 font-mono text-[11px] leading-relaxed">{scriptData.content}</pre>
+              </ScrollArea>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

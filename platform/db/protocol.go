@@ -1838,6 +1838,20 @@ type VulnKnowledgeFilter struct {
 	PageSize int
 }
 
+// VulnKnowledgeRefs returns the refs JSON of one knowledge row (for serving
+// its standalone EXP script). Returns nil when the row does not exist.
+func (d *DB) VulnKnowledgeRefs(id int64) (json.RawMessage, error) {
+	var refs []byte
+	err := d.QueryRow(`SELECT refs FROM vuln_knowledge WHERE id=$1`, id).Scan(&refs)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(refs), nil
+}
+
 // VulnKnowledgeList returns a page of knowledge rows plus the total count and
 // per-source totals (for the filter chips). Payloads (icssploit) sort first.
 func (d *DB) VulnKnowledgeList(f VulnKnowledgeFilter) (items []*VulnKnowledgeItem, total int, bySource map[string]int, err error) {

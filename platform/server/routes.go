@@ -64,6 +64,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/protocol/stats", s.protocolStats)
 	mux.HandleFunc("GET /api/protocol/dashboard", s.protocolVulnDashboard)
 	mux.HandleFunc("GET /api/protocol/knowledge", s.protocolKnowledge)
+	mux.HandleFunc("GET /api/protocol/knowledge/script", s.protocolKnowledgeScript)
 	mux.HandleFunc("GET /api/protocol/tools", s.protocolToolConfig)
 	mux.HandleFunc("GET /api/protocol/tools/check", s.protocolCheckTools)
 

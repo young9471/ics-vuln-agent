@@ -1,5 +1,23 @@
 # 更新日志
 
+## [0.14.19-v2] - 2026-11-18
+
+EXP 脱框架：载荷编译为零依赖独立脚本，存入智能体 EXP 库。
+
+- 新工具 `tools/payload_to_exp.py`：把 KB 中带静态帧的 plcsts/icssploit
+  载荷（原依赖 `from plcsts/icssploit import exploits` 框架运行时）编译成
+  纯标准库脚本（argparse+socket，--target/--port/--frame/--all/--list/
+  --dry-run），按 source/vendor/model 存入 `platform/data/exp_library/`，
+  sha16 与相对路径回写 vuln_knowledge.refs（standalone/standalone_sha16）。
+  151 个独立脚本生成（121 个纯动态帧模块跳过）。
+- 后端 `GET /api/protocol/knowledge/script?id=`：按 KB id 取 refs.standalone，
+  绑定 exp_library 目录防穿越，返回脚本内容+sha。
+- 前端知识库页载荷展开区加「查看独立脚本（脱框架）」按钮 → 弹窗展示
+  （sha16/字节数/复制）。验证 M221 启停脚本：零框架 import、含真实停机帧。
+- 新增 6 项单测；db/server 测试过。
+- 注：exp_library 在 data/ 下（gitignore），脚本随智能体运行环境分发，
+  不自动入公开仓库；如需公开可单独脱敏后添加。
+
 ## [0.14.18-v2] - 2026-11-18
 
 协议会话状态机可视化：从徽章+表格升级为 SVG 状态转移图。

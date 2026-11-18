@@ -1387,6 +1387,66 @@ func (s *Server) protocolKnowledge(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// protocolKnowledgeScript serves the framework-free standalone EXP script of a
+// knowledge payload (refs.standalone), bound to the exp_library directory.
+func (s *Server) protocolKnowledgeScript(w http.ResponseWriter, r *http.Request) {
+	pg := s.pg(w)
+	if pg == nil {
+		return
+	}
+	id, ok := pathInt(r, "id")
+	if !ok || id <= 0 {
+		// allow ?id= query form (knowledge rows are addressed by KB id)
+		n, e := strconv.Atoi(r.URL.Query().Get("id"))
+		if e != nil || n <= 0 {
+			writeErr(w, 400, "id required")
+			return
+		}
+		id = int64(n)
+	}
+	refs, err := pg.VulnKnowledgeRefs(id)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	if refs == nil {
+		writeErr(w, 404, "knowledge row not found")
+		return
+	}
+	var meta struct {
+		Standalone string `json:"standalone"`
+		Sha16      string `json:"standalone_sha16"`
+	}
+	if err := json.Unmarshal(refs, &meta); err != nil || meta.Standalone == "" {
+		writeErr(w, 404, "该载荷无独立脚本（无静态帧或尚未转换）")
+		return
+	}
+	libRoot := filepath.Join(filepath.Dir(s.protocolRunner.RunsDir()), "exp_library")
+	absRoot, err := filepath.Abs(libRoot)
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	absFull, err := filepath.Abs(filepath.Join(absRoot, filepath.FromSlash(meta.Standalone)))
+	if err != nil {
+		writeErr(w, 500, err.Error())
+		return
+	}
+	if !strings.HasPrefix(absFull, absRoot+string(filepath.Separator)) {
+		writeErr(w, 400, "path escapes exp_library")
+		return
+	}
+	data, err := os.ReadFile(absFull)
+	if err != nil {
+		writeErr(w, 404, "script file not found: "+meta.Standalone)
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"name": filepath.Base(absFull), "path": meta.Standalone,
+		"size": len(data), "sha256_16": meta.Sha16, "content": string(data),
+	})
+}
+
 func (s *Server) protocolToolConfig(w http.ResponseWriter, r *http.Request) {
 	// The paths are read-only here; change them in config.json / env and restart.
 	// The check endpoint proves the interpreter and tool files are reachable.
